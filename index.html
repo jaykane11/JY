@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>힘들때하는힐링게임</title>
+    <style>
+        body { margin: 0; background: #222; overflow: hidden; touch-action: none; font-family: sans-serif; }
+        canvas { display: block; background: #333; }
+        #ui { position: absolute; top: 20px; left: 20px; color: white; font-size: 24px; font-weight: bold; pointer-events: none; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
+    </style>
+</head>
+<body>
+    <div id="ui">병력: <span id="count">1</span></div>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const countDisplay = document.getElementById('count');
+
+        // 화면 크기 설정 (모바일 전체 화면)
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        let player = { x: canvas.width / 2, y: canvas.height * 0.8, size: 25, count: 1 };
+        let bullets = [];
+        let enemies = [];
+        let gates = [];
+        let frame = 0;
+        let gameOver = false;
+
+        // 터치 이벤트 처리
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const rect = canvas.getBoundingClientRect();
+            // 손가락 위치로 캐릭터 이동 (약간 위를 보게 하려면 y값 조정 가능)
+            player.x = touch.clientX - rect.left;
+        }, { passive: false });
+
+        // 마우스 클릭 드래그도 지원 (PC 테스트용)
+        canvas.addEventListener('mousemove', (e) => {
+            if (e.buttons > 0) {
+                const rect = canvas.getBoundingClientRect();
+                player.x = e.clientX - rect.left;
+            }
+        });
+
+        function spawnGate() {
+            const isMulti = Math.random() > 0.5;
+            const value = isMulti ? Math.floor(Math.random() * 2) + 2 : Math.floor(Math.random() * 15) + 5;
+            gates.push({
+                x: 0, y: -50, w: canvas.width, h: 60,
+                value: value,
+                type: isMulti ? '×' : '+',
+                color: isMulti ? 'rgba(76, 175, 80, 0.7)' : 'rgba(33, 150, 243, 0.7)'
+            });
+        }
+
+        function spawnEnemy() {
+            const size = 40;
+            enemies.push({ 
+                x: Math.random() * (canvas.width - size), 
+                y: -size, 
+                hp: 3 + Math.floor(frame / 300),
+                size: size 
+            });
+        }
+
+        function update() {
+            if (gameOver) return;
+            frame++;
+
+            if (frame % 120 === 0) spawnGate();
+            if (frame % 45 === 0) spawnEnemy();
+            
+            // 발사 속도 조절 (병력 수에 따라)
+            if (frame % 8 === 0) {
+                let burst = Math.min(Math.floor(player.count / 5) + 1, 8);
+                for(let i=0; i < burst; i++) {
+                    bullets.push({ 
+                        x: player.x + (Math.random() * 20 - 10), 
+                        y: player.y - 20, 
+                        speed: 10 
+                    });
+                }
+            }
+
+            gates.forEach((gate, gIdx) => {
+                gate.y += 4;
+                if (gate.y > player.y - 30 && gate.y < player.y + 10) {
+                    if (gate.type === '×') player.count *= gate.value;
+                    else player.count += gate.value;
+                    gates.splice(gIdx, 1);
+                }
+                if (gate.y > canvas.height) gates.splice(gIdx, 1);
+            });
+
+            bullets.forEach((b, bIdx) => {
+                b.y -= b.speed;
+                if (b.y < 0) bullets.splice(bIdx, 1);
+            });
+
+            enemies.forEach((en, eIdx) => {
+                en.y += 2.5;
+                bullets.forEach((b, bIdx) => {
+                    if (b.x > en.x && b.x < en.x + en.size && b.y > en.y && b.y < en.y + en.size) {
+                        en.hp--;
+                        bullets.splice(bIdx, 1);
+                    }
+                });
+
+                if (en.hp <= 0) enemies.splice(eIdx, 1);
+                if (en.y > canvas.height) {
+                    gameOver = true;
+                    alert("게임 오버! 최종 병력: " + Math.floor(player.count));
+                    location.reload();
+                }
+            });
+
+            countDisplay.innerText = Math.floor(player.count);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 게이트
+            gates.forEach(g => {
+                ctx.fillStyle = g.color;
+                ctx.fillRect(g.x, g.y, g.w, g.h);
+                ctx.fillStyle = "white";
+                ctx.font = "bold 24px Arial";
+                ctx.textAlign = "center";
+                ctx.fillText(`${g.type}${g.value}`, canvas.width / 2, g.y + 38);
+            });
+
+            // 적
+            enemies.forEach(en => {
+                ctx.fillStyle = "#FF5252";
+                ctx.fillRect(en.x, en.y, en.size, en.size);
+                ctx.fillStyle = "white";
+                ctx.font = "16px Arial";
+                ctx.fillText(en.hp, en.x + en.size/2, en.y + en.size/2 + 5);
+            });
+
+            // 총알
+            ctx.fillStyle = "#FFEB3B";
+            bullets.forEach(b => ctx.fillRect(b.x, b.y, 4, 12));
+
+            // 플레이어
+            ctx.fillStyle = "#00B0FF";
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = "#00B0FF";
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0; // 다른 객체엔 그림자 제외
+
+            update();
+            requestAnimationFrame(draw);
+        }
+
+        draw();
+    </script>
+</body>
+</html>
