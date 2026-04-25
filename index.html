@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>힘들때하는힐링게임</title>
+    <title>좀비디펜스</title>
     <style>
         body { margin: 0; background: #222; overflow: hidden; touch-action: none; font-family: sans-serif; }
-        canvas { display: block; background: #333; }
-        #ui { position: absolute; top: 20px; left: 20px; color: white; font-size: 24px; font-weight: bold; pointer-events: none; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
+        canvas { display: block; background: #1a1a1a; /* 약간 더 어두운 배경 */ }
+        #ui { position: absolute; top: 20px; left: 20px; color: white; font-size: 24px; font-weight: bold; pointer-events: none; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); z-index: 10; }
     </style>
 </head>
 <body>
@@ -19,7 +19,31 @@
         const ctx = canvas.getContext('2d');
         const countDisplay = document.getElementById('count');
 
-        // 화면 크기 설정 (모바일 전체 화면)
+        // --- 이미지 로딩 섹션 ---
+        // 1. 플레이어 이미지
+        const playerImg = new Image();
+        playerImg.src = 'player.png'; // 플레이어 이미지 파일명
+        let isPlayerImgLoaded = false;
+        playerImg.onload = () => { isPlayerImgLoaded = true; };
+
+        // 2. 적 캐릭터 이미지들 (배열로 관리)
+        const enemyImgSources = ['enemy1.png', 'enemy2.png', 'enemy3.png'];
+        const enemyImages = [];
+        let loadedEnemyCount = 0;
+
+        enemyImgSources.forEach((src, index) => {
+            const img = new Image();
+            img.src = src;
+            img.onload = () => {
+                loadedEnemyCount++;
+                if (loadedEnemyCount === enemyImgSources.length) {
+                    console.log("모든 적 이미지 로드 완료");
+                }
+            };
+            enemyImages[index] = img; // 배열에 이미지 객체 저장
+        });
+        // -----------------------
+
         function resize() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
@@ -27,23 +51,29 @@
         window.addEventListener('resize', resize);
         resize();
 
-        let player = { x: canvas.width / 2, y: canvas.height * 0.8, size: 25, count: 1 };
+        // 플레이어 설정
+        let player = { 
+            x: canvas.width / 2, 
+            y: canvas.height * 0.85, // 약간 더 아래로 배치
+            width: 60,  
+            height: 70, 
+            count: 1 
+        };
+        
         let bullets = [];
         let enemies = [];
         let gates = [];
         let frame = 0;
         let gameOver = false;
 
-        // 터치 이벤트 처리
+        // 터치/마우스 이벤트 (이전과 동일)
         canvas.addEventListener('touchmove', (e) => {
             e.preventDefault();
             const touch = e.touches[0];
             const rect = canvas.getBoundingClientRect();
-            // 손가락 위치로 캐릭터 이동 (약간 위를 보게 하려면 y값 조정 가능)
             player.x = touch.clientX - rect.left;
         }, { passive: false });
 
-        // 마우스 클릭 드래그도 지원 (PC 테스트용)
         canvas.addEventListener('mousemove', (e) => {
             if (e.buttons > 0) {
                 const rect = canvas.getBoundingClientRect();
@@ -55,45 +85,83 @@
             const isMulti = Math.random() > 0.5;
             const value = isMulti ? Math.floor(Math.random() * 2) + 2 : Math.floor(Math.random() * 15) + 5;
             gates.push({
-                x: 0, y: -50, w: canvas.width, h: 60,
+                x: 0, y: -60, w: canvas.width, h: 70,
                 value: value,
                 type: isMulti ? '×' : '+',
-                color: isMulti ? 'rgba(76, 175, 80, 0.7)' : 'rgba(33, 150, 243, 0.7)'
+                color: isMulti ? 'rgba(76, 175, 80, 0.8)' : 'rgba(33, 150, 243, 0.8)'
             });
         }
 
+        // --- [핵심 수정] 랜덤 적 생성 함수 ---
         function spawnEnemy() {
-            const size = 40;
-            enemies.push({ 
-                x: Math.random() * (canvas.width - size), 
-                y: -size, 
-                hp: 3 + Math.floor(frame / 300),
-                size: size 
-            });
+            // 어떤 종류의 적을 생성할지 랜덤 결정 (0, 1, 2 중 하나)
+            // 이미지 로드가 덜 되었더라도 최소한 enemy1은 쓰도록 안전장치
+            const enemyType = (loadedEnemyCount > 0) ? Math.floor(Math.random() * loadedEnemyCount) : 0;
+            
+            let enemyData = {
+                imgIndex: enemyType,
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+                hp: 0,
+                speed: 2 + Math.random() * 1 // 기본 속도 + 약간의 랜덤성
+            };
+
+            // 적 종류별 능력치 설정
+            switch (enemyType) {
+                case 0: // 약한 적 (enemy1.png)
+                    enemyData.width = 40;
+                    enemyData.height = 40;
+                    enemyData.hp = 2 + Math.floor(frame / 500); // 시간이 지날수록 약해짐
+                    enemyData.speed *= 1.2; // 약간 더 빠름
+                    break;
+                case 1: // 중간 적 (enemy2.png)
+                    enemyData.width = 60;
+                    enemyData.height = 60;
+                    enemyData.hp = 5 + Math.floor(frame / 300);
+                    break;
+                case 2: // 강한 적 (enemy3.png)
+                    enemyData.width = 90;
+                    enemyData.height = 90;
+                    enemyData.hp = 15 + Math.floor(frame / 150); // 체력이 빨리 늘어남
+                    enemyData.speed *= 0.8; // 약간 더 느림
+                    break;
+            }
+
+            enemyData.x = Math.random() * (canvas.width - enemyData.width);
+            enemyData.y = -enemyData.height; // 화면 위에서 등장
+
+            enemies.push(enemyData);
         }
+        // ---------------------------------
 
         function update() {
             if (gameOver) return;
             frame++;
 
-            if (frame % 120 === 0) spawnGate();
-            if (frame % 45 === 0) spawnEnemy();
+            // 생성 타이밍 조절
+            if (frame % 150 === 0) spawnGate();
+            // 시간이 지날수록 적이 더 자주 등장
+            let enemySpawnRate = Math.max(20, 50 - Math.floor(frame / 500));
+            if (frame % enemySpawnRate === 0) spawnEnemy();
             
-            // 발사 속도 조절 (병력 수에 따라)
-            if (frame % 8 === 0) {
-                let burst = Math.min(Math.floor(player.count / 5) + 1, 8);
+            // 발사 로직
+            if (frame % 7 === 0) {
+                let burst = Math.min(Math.floor(player.count / 5) + 1, 10);
                 for(let i=0; i < burst; i++) {
                     bullets.push({ 
-                        x: player.x + (Math.random() * 20 - 10), 
-                        y: player.y - 20, 
-                        speed: 10 
+                        x: player.x + (Math.random() * 30 - 15), 
+                        y: player.y - player.height/2, 
+                        speed: 12 
                     });
                 }
             }
 
+            // 이동 및 충돌 로직 (게이트)
             gates.forEach((gate, gIdx) => {
                 gate.y += 4;
-                if (gate.y > player.y - 30 && gate.y < player.y + 10) {
+                if (gate.y > player.y - player.height/2 && gate.y < player.y + player.height/2) {
                     if (gate.type === '×') player.count *= gate.value;
                     else player.count += gate.value;
                     gates.splice(gIdx, 1);
@@ -101,65 +169,101 @@
                 if (gate.y > canvas.height) gates.splice(gIdx, 1);
             });
 
+            // 이동 로직 (총알)
             bullets.forEach((b, bIdx) => {
                 b.y -= b.speed;
                 if (b.y < 0) bullets.splice(bIdx, 1);
             });
 
+            // 이동 및 충돌 로직 (적)
             enemies.forEach((en, eIdx) => {
-                en.y += 2.5;
+                en.y += en.speed; // 각 적의 고유 속도 사용
+
+                // 총알-적 충돌
                 bullets.forEach((b, bIdx) => {
-                    if (b.x > en.x && b.x < en.x + en.size && b.y > en.y && b.y < en.y + en.size) {
+                    if (b.x > en.x && b.x < en.x + en.width && b.y > en.y && b.y < en.y + en.height) {
                         en.hp--;
                         bullets.splice(bIdx, 1);
                     }
                 });
 
+                // 적 사망 판정
                 if (en.hp <= 0) enemies.splice(eIdx, 1);
+                
+                // 게임 오버 조건
                 if (en.y > canvas.height) {
                     gameOver = true;
-                    alert("게임 오버! 최종 병력: " + Math.floor(player.count));
-                    location.reload();
+                    // 종료 화면 UI를 더 깔끔하게 (alert 대신 canvas에 그릴 수도 있음)
+                    setTimeout(() => {
+                        alert("GAME OVER\n최종 군단 크기: " + Math.floor(player.count));
+                        location.reload();
+                    }, 10);
                 }
             });
 
             countDisplay.innerText = Math.floor(player.count);
         }
 
+        // --- [핵심 수정] 적 이미지 그리기 함수 ---
+        function drawEnemies() {
+            enemies.forEach(en => {
+                // 해당 적의 이미지 객체 가져오기
+                const img = enemyImages[en.imgIndex];
+                
+                if (loadedEnemyCount === enemyImgSources.length) {
+                    // 이미지가 모두 로드되었으면 이미지를 그림
+                    ctx.drawImage(img, en.x, en.y, en.width, en.height);
+                } else {
+                    // 이미지 로딩 중일 때 임시 사각형
+                    ctx.fillStyle = en.imgIndex === 2 ? "#d32f2f" : en.imgIndex === 1 ? "#f57c00" : "#fbc02d";
+                    ctx.fillRect(en.x, en.y, en.width, en.height);
+                }
+
+                // HP 표시
+                ctx.fillStyle = "white";
+                ctx.font = "bold 16px Arial";
+                ctx.textAlign = "center";
+                // 강한 적은 체력 텍스트를 조금 더 크게
+                if (en.imgIndex === 2) ctx.font = "bold 20px Arial";
+                ctx.fillText(en.hp, en.x + en.width/2, en.y + en.height/2 + 7);
+            });
+        }
+        // -------------------------------------
+
+        function drawPlayer() {
+            if (isPlayerImgLoaded) {
+                ctx.drawImage(playerImg, player.x - player.width / 2, player.y - player.height / 2, player.width, player.height);
+            } else {
+                // 임시 원
+                ctx.fillStyle = "#00B0FF";
+                ctx.beginPath();
+                ctx.arc(player.x, player.y, 30, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // 게이트
+            // 게이트 그리기 (텍스트 스타일 개선)
             gates.forEach(g => {
                 ctx.fillStyle = g.color;
                 ctx.fillRect(g.x, g.y, g.w, g.h);
                 ctx.fillStyle = "white";
-                ctx.font = "bold 24px Arial";
+                ctx.font = "bold 32px Arial"; // 더 크게
                 ctx.textAlign = "center";
-                ctx.fillText(`${g.type}${g.value}`, canvas.width / 2, g.y + 38);
+                ctx.fillText(`${g.type}${g.value}`, canvas.width / 2, g.y + 45);
             });
 
-            // 적
-            enemies.forEach(en => {
-                ctx.fillStyle = "#FF5252";
-                ctx.fillRect(en.x, en.y, en.size, en.size);
-                ctx.fillStyle = "white";
-                ctx.font = "16px Arial";
-                ctx.fillText(en.hp, en.x + en.size/2, en.y + en.size/2 + 5);
-            });
-
-            // 총알
+            // 총알 그리기
             ctx.fillStyle = "#FFEB3B";
-            bullets.forEach(b => ctx.fillRect(b.x, b.y, 4, 12));
+            bullets.forEach(b => ctx.fillRect(b.x, b.y, 4, 15));
 
-            // 플레이어
-            ctx.fillStyle = "#00B0FF";
-            ctx.shadowBlur = 15;
-            ctx.shadowColor = "#00B0FF";
-            ctx.beginPath();
-            ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.shadowBlur = 0; // 다른 객체엔 그림자 제외
+            // 적 그리기 (함수 호출)
+            drawEnemies();
+
+            // 플레이어 그리기
+            drawPlayer();
 
             update();
             requestAnimationFrame(draw);
